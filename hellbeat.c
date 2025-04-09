@@ -120,15 +120,19 @@ void start_trail(enum MOTIONS motion, V2f map, float starttime, float lifetime) 
         case Motion_F:
                 pos.x = (map.x/10) * 2; pos.y = 0;
                 step = fabs((float)(pos.y - mid.y)/lifetime);
-        case Motion_K:
-                pos.x = (map.x/10) * 8; pos.y = map.y;
-                step = fabs((float)(pos.y - mid.y)/lifetime);
+                break;
         case Motion_D:
                 pos.x = (map.x/10) * 2; pos.y = map.y;
                 step = fabs((float)(pos.y - mid.y)/lifetime);
+                break;
         case Motion_J:
                 pos.x = (map.x/10) * 8; pos.y = 0;
                 step = fabs((float)(pos.y - mid.y)/lifetime);
+                break;
+        case Motion_K:
+                pos.x = (map.x/10) * 8; pos.y = map.y;
+                step = fabs((float)(pos.y - mid.y)/lifetime);
+                break;
             default:
             break;
     }
@@ -147,10 +151,10 @@ int main(void)
     server.start_time = GetTime();
 
     //test
-    start_trail(Motion_J, map, 1, 1.5);
-    start_trail(Motion_J, map, 2, 2.5);
-    start_trail(Motion_J, map, 3, 0.5);
-    start_trail(Motion_J, map, 3, 1.5);
+    start_trail(Motion_F, map, 1,   1);
+    start_trail(Motion_D, map, 1.5, 1);
+    start_trail(Motion_J, map, 2,   1);
+    start_trail(Motion_K, map, 2.5, 1);
 
     while (!WindowShouldClose())
     {
@@ -162,36 +166,50 @@ int main(void)
 
         for (int i = 0; i<MOTION_COUNT; i++)
         {
-            Color c;
+            Color c = DARKGREEN;
             float dir = 1;
 
             switch (i)
             {
-                case Motion_D: dir = -1; c = BLACK; break;
-                case Motion_F: dir = 1; c = YELLOW; break;
-                case Motion_J: dir = 1; c = GREEN; break;
-                case Motion_K: dir = -1; c = BLUE; break;
+                case Motion_F: dir = 1;YELLOW; break;
+                case Motion_D: dir = -1;BLACK; break;
+                case Motion_J: dir = 1; GREEN; break;
+                case Motion_K: dir = -1; BLUE; break;
             }
 
             for (int j = 0; j<server.trails[i].count; j++)
             {
-                Color ct = c;
                 struct trail *t = &server.trails[i].items[j];
                 if (t->alive == false)
                     continue;
                 if (t->spawntime > server.time)
                     continue;
 
-                if (dir == 1)
+                if (dir == 1) // TODO; do this shit better,
+                              // it's an abonamination
                 {
                     t->pos.y = t->pos.y + (t->step * dt);
 
                     if (t->pos.y > map_middle.y-radius*2)
                     {
-                        ct = RED;
+                        c = RED;
 
                         switch (i)
                         {
+                            case Motion_F:
+                                if (IsKeyDown(KEY_F))
+                                {
+                                    server.score += 300;
+                                    t->alive = false;
+                                }
+                                break;
+                            case Motion_D:
+                                if (IsKeyDown(KEY_D))
+                                {
+                                    server.score += 300;
+                                    t->alive = false;
+                                }
+                                break;
                             case Motion_J:
                                 if (IsKeyDown(KEY_J))
                                 {
@@ -199,9 +217,13 @@ int main(void)
                                     t->alive = false;
                                 }
                                 break;
-                            case Motion_D:break;
-                            case Motion_F:break;
-                            case Motion_K:break;
+                            case Motion_K:
+                                if (IsKeyDown(KEY_K))
+                                {
+                                    server.score += 300;
+                                    t->alive = false;
+                                }
+                                break;
                         }
                     }
 
@@ -209,7 +231,7 @@ int main(void)
                         t->alive = false;
 
                     if (t->alive == true)
-                        DrawCircle(t->pos.x, t->pos.y, radius, ct);
+                        DrawCircle(t->pos.x, t->pos.y, radius, c);
                 }
             }
             for (int j = 0; j<server.trails[i].count; j++)
