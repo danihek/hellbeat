@@ -14,6 +14,8 @@ const int g_KEY_F = KEY_R; //KEY_F;
 const int g_KEY_J = KEY_U; //KEY_J;
 const int g_KEY_K = KEY_I; //KEY_K;
 
+Sound beatWav;
+
 /* structures etc */
 enum MOTIONS
 {
@@ -133,6 +135,9 @@ void check_borders(struct Trail *t, V2f mid)
     int keyD = IsKeyPressed(g_KEY_D);
     int keyK = IsKeyPressed(g_KEY_K);
 
+    bool half_score = false;
+    bool full_score = false;
+
     if (m == Motion_J || m == Motion_F)
     {
         if (t->pos.y > up && t->pos.y < down)
@@ -141,13 +146,7 @@ void check_borders(struct Trail *t, V2f mid)
             if ((keyJ && m == Motion_J) || 
                     (keyF && m == Motion_F))
             {
-                server.score += 300;
-                t->alive = false;
-
-                combo_update();
-                char *combo_text = malloc(sizeof(char)*16);
-                sprintf(combo_text , "x%d", server.combo);
-                add_text(combo_text, mid, 0.5);
+                full_score = true;
             }
         }
         else if (t->pos.y > hup && t->pos.y < hdown)
@@ -156,13 +155,7 @@ void check_borders(struct Trail *t, V2f mid)
             if ((keyJ && m == Motion_J) || 
                     (keyF && m == Motion_F))
             {
-                server.score += 150;
-                t->alive = false;
-
-                combo_update();
-                char *combo_text = malloc(sizeof(char)*16);
-                sprintf(combo_text , "x%d", server.combo);
-                add_text(combo_text, mid, 0.5);
+                half_score = true;
             }
         }
         else if (t->pos.y > down)
@@ -182,13 +175,7 @@ void check_borders(struct Trail *t, V2f mid)
             if ((keyD && m == Motion_D) || 
                     (keyK && m == Motion_K))
             {
-                server.score += 300;
-                t->alive = false;
-
-                combo_update();
-                char *combo_text = malloc(sizeof(char)*16);
-                sprintf(combo_text , "x%d", server.combo);
-                add_text(combo_text, mid, 0.5);
+                full_score = true;
             }
         }
         else if (t->pos.y < hdown && t->pos.y > hup)
@@ -197,13 +184,7 @@ void check_borders(struct Trail *t, V2f mid)
             if ((keyD && m == Motion_D) || 
                     (keyK && m == Motion_K))
             {
-                server.score += 150;
-                t->alive = false;
-
-                combo_update();
-                char *combo_text = malloc(sizeof(char)*16);
-                sprintf(combo_text , "x%d", server.combo);
-                add_text(combo_text, mid, 0.5);
+                half_score = false;
             }
         }
         else if (t->pos.y < up)
@@ -214,6 +195,31 @@ void check_borders(struct Trail *t, V2f mid)
         }
         else
             t->c = GRAY;
+    }
+
+    if (full_score)
+    {
+        server.score += 300;
+        t->alive = false;
+
+        combo_update();
+        char *combo_text = malloc(sizeof(char)*16);
+        sprintf(combo_text , "x%d", server.combo);
+        add_text(combo_text, mid, 0.5);
+
+        PlaySound(beatWav);
+    }
+    else if (half_score)
+    {
+        server.score += 150;
+        t->alive = false;
+
+        combo_update();
+        char *combo_text = malloc(sizeof(char)*16);
+        sprintf(combo_text , "x%d", server.combo);
+        add_text(combo_text, mid, 0.5);
+
+        PlaySound(beatWav);
     }
 }
 
@@ -333,6 +339,10 @@ int main(void)
     const V2f map_middle = v2f_div(map, v2ff(2));
 
     InitWindow(map.x, map.y, "Sesbian Lex!");
+    InitAudioDevice();
+
+    beatWav = LoadSound("./sounds/beat.wav");
+
     SetTargetFPS(240);
     server.start_time = GetTime();
     server.tr = map.x/40;
@@ -393,6 +403,10 @@ int main(void)
         EndDrawing();
     }
 
+    UnloadSound(beatWav);
+    CloseAudioDevice();
+
     CloseWindow();
+
     return 0;
 }
