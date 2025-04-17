@@ -6,54 +6,13 @@
 #define LA_IMPLEMENTATION
 #include "la.h"
 
-#define push(xs, x) \
-    do {\
-        if (xs.count >= xs.capacity)\
-        {\
-            if (xs.capacity == 0) xs.capacity = sizeof(x)+256;\
-            else xs.capacity *= 2;\
-            xs.items = realloc(xs.items, xs.capacity*sizeof(*xs.items));\
-        }\
-        xs.items[xs.count++] = x;\
-    } while(0)
+#define STB_DS_IMPLEMENTATION
+#include "stb_ds.h"
 
-#define delete(xs, x) \
-    do {\
-        if (xs.count > 0) {\
-            size_t index = -1;\
-            for (size_t i = 0; i < xs.count; ++i) {\
-                if (&xs.items[i] == &x) {\
-                    index = i;\
-                    break;\
-                }\
-            }\
-            if (index != (size_t)-1) {\
-                for (size_t i = index; i < xs.count - 1; ++i) {\
-                    xs.items[i] = xs.items[i + 1];\
-                }\
-                --xs.count;\
-                if (xs.count * 2 < xs.capacity && xs.capacity > 256) {\
-                    xs.capacity /= 2;\
-                    xs.items = realloc(xs.items, xs.capacity * sizeof(*xs.items));\
-                }\
-            }\
-        }\
-    } while(0)
-
-#define delete_by_idx(xs, index) \
-    do {\
-        if (xs.count > 0 && index < xs.count) {\
-            for (size_t i = index; i < xs.count - 1; ++i) {\
-                xs.items[i] = xs.items[i + 1];\
-            }\
-            --xs.count;\
-            if (xs.count * 2 < xs.capacity && xs.capacity > 256) {\
-                xs.capacity /= 2;\
-                xs.items = realloc(xs.items, xs.capacity * sizeof(*xs.items));\
-            }\
-        }\
-    } while(0)
-
+const int g_KEY_D = KEY_E; //KEY_D;
+const int g_KEY_F = KEY_R; //KEY_F;
+const int g_KEY_J = KEY_U; //KEY_J;
+const int g_KEY_K = KEY_I; //KEY_K;
 
 /* structures etc */
 enum MOTIONS
@@ -71,7 +30,8 @@ struct Trail
     Color c;
     int alive;
     float step;
-    float spawntime; // in seconds
+    float spawntime;         // in seconds
+    enum MOTIONS motion;     // D, F, J, K
 };
 
 typedef struct {
@@ -80,18 +40,6 @@ typedef struct {
     float lifetime;    // max time in [s] how long text should be dispalyed
     float appear_time; // since it was created we are counting += dt
 } Text;
-
-typedef struct {
-    struct Trail *items;
-    size_t count;
-    size_t capacity;
-} Trails_Array;
-
-typedef struct {
-    Text *items;
-    size_t count;
-    size_t capacity;
-} Text_Array;
 
 struct rhythm_server
 {
@@ -105,8 +53,8 @@ struct rhythm_server
     float time;      // current time
     float start_time;// time when game started
 
-    Text_Array text_arr;
-    Trails_Array trails[MOTION_COUNT];
+    Text *text_arr;
+    struct Trail *trails;
 };
 
 struct map_level
@@ -121,12 +69,16 @@ struct artist
 /* GLOBAL VARIABLES */
 struct rhythm_server server = {0};
 
+// combo
+void combo_break();
+void combo_update();
+
 /* functions declarations */
 bool check_keysUP(enum MOTIONS m);
 bool check_keysDOWN(enum MOTIONS m);
 
+void check_borders(struct Trail *t, V2f mid);
 void add_text(char *text, V2f pos, float lifetime);
-void check_borders(enum MOTIONS m, struct Trail *t, V2f mid, int dir);
 void start_trail(enum MOTIONS motion, V2f map, float starttime, float lifetime);
 
 /* functions implementations */
@@ -159,12 +111,13 @@ void start_trail(enum MOTIONS motion, V2f map, float starttime, float lifetime) 
             default:
             break;
     }
-    struct Trail t = {pos, GRAY, true, step, starttime};
-    push(server.trails[motion], t);
+    struct Trail t = {pos, GRAY, true, step, starttime, motion};
+    arrpush(server.trails, t);
 }
 
-void check_borders(enum MOTIONS m, struct Trail *t, V2f mid, int dir)
+void check_borders(struct Trail *t, V2f mid)
 {
+    enum MOTIONS m = t->motion;
     float enp  = server.ear;   // 300ep activation range;
     float henp = server.ehar;  // 150ep activation range
     
@@ -175,17 +128,23 @@ void check_borders(enum MOTIONS m, struct Trail *t, V2f mid, int dir)
     float hup = mid.y - henp;
     float hdown = mid.y + henp;
 
-    if (dir == 1)
+    int keyJ = IsKeyPressed(g_KEY_J);
+    int keyF = IsKeyPressed(g_KEY_F);
+    int keyD = IsKeyPressed(g_KEY_D);
+    int keyK = IsKeyPressed(g_KEY_K);
+
+    if (m == Motion_J || m == Motion_F)
     {
         if (t->pos.y > up && t->pos.y < down)
         {
             t->c = RED;
-            if (check_keysUP(m))
+            if ((keyJ && m == Motion_J) || 
+                    (keyF && m == Motion_F))
             {
                 server.score += 300;
                 t->alive = false;
 
-                server.combo++;
+                combo_update();
                 char *combo_text = malloc(sizeof(char)*16);
                 sprintf(combo_text , "x%d", server.combo);
                 add_text(combo_text, mid, 0.5);
@@ -194,12 +153,13 @@ void check_borders(enum MOTIONS m, struct Trail *t, V2f mid, int dir)
         else if (t->pos.y > hup && t->pos.y < hdown)
         {
             t->c = ORANGE;
-            if (check_keysUP(m))
+            if ((keyJ && m == Motion_J) || 
+                    (keyF && m == Motion_F))
             {
                 server.score += 150;
                 t->alive = false;
 
-                server.combo++;
+                combo_update();
                 char *combo_text = malloc(sizeof(char)*16);
                 sprintf(combo_text , "x%d", server.combo);
                 add_text(combo_text, mid, 0.5);
@@ -214,17 +174,18 @@ void check_borders(enum MOTIONS m, struct Trail *t, V2f mid, int dir)
         else
             t->c = GRAY;
     }
-    else
+    else if (m == Motion_D || m == Motion_K)
     {
         if (t->pos.y < down && t->pos.y > up)
         {
             t->c = RED;
-            if (check_keysDOWN(m))
+            if ((keyD && m == Motion_D) || 
+                    (keyK && m == Motion_K))
             {
                 server.score += 300;
                 t->alive = false;
 
-                server.combo++;
+                combo_update();
                 char *combo_text = malloc(sizeof(char)*16);
                 sprintf(combo_text , "x%d", server.combo);
                 add_text(combo_text, mid, 0.5);
@@ -233,12 +194,13 @@ void check_borders(enum MOTIONS m, struct Trail *t, V2f mid, int dir)
         else if (t->pos.y < hdown && t->pos.y > hup)
         {
             t->c = ORANGE;
-            if (check_keysDOWN(m))
+            if ((keyD && m == Motion_D) || 
+                    (keyK && m == Motion_K))
             {
                 server.score += 150;
                 t->alive = false;
 
-                server.combo++;
+                combo_update();
                 char *combo_text = malloc(sizeof(char)*16);
                 sprintf(combo_text , "x%d", server.combo);
                 add_text(combo_text, mid, 0.5);
@@ -255,49 +217,6 @@ void check_borders(enum MOTIONS m, struct Trail *t, V2f mid, int dir)
     }
 }
 
-bool check_keysUP(enum MOTIONS m)
-{
-    switch (m)
-    {
-        case Motion_F:
-            if (IsKeyPressed(KEY_F))
-            {
-                return true;
-            }
-            break;
-        case Motion_J:
-            if (IsKeyPressed(KEY_J))
-            {
-                return true;
-            }
-            break;
-        default:
-            break;
-    }
-    return false;
-}
-
-bool check_keysDOWN(enum MOTIONS m)
-{
-    switch (m)
-    {
-        case Motion_D:
-            if (IsKeyPressed(KEY_D))
-            {
-                return true;
-            }
-            break;
-        case Motion_K:
-            if (IsKeyPressed(KEY_K))
-            {
-                return true;
-            }
-            break;
-        default:
-            break;
-    }
-    return false;
-}
 void drawlines(V2f map, V2f mid)
 {
     int enp  = server.ear;
@@ -319,9 +238,9 @@ void drawlines(V2f map, V2f mid)
 
 void drawtext(V2f map, float dt)
 {
-    for (size_t i = 0; i<server.text_arr.count; i++)
+    for (size_t i = 0; i<arrlenu(server.text_arr); i++)
     {
-        Text *t = &server.text_arr.items[i];
+        Text *t = &server.text_arr[i];
         t->appear_time += dt;
 
         if (t->appear_time > t->lifetime)
@@ -351,18 +270,20 @@ void drawtext(V2f map, float dt)
     DrawText(score_text, score_text_pos.x, score_text_pos.y, font_size, WHITE);
 }
 
-void trail_step(struct Trail *t, float dt, int dir)
+void trail_step(struct Trail *t, float dt)
 {
-    if (dir == 1)
+    enum MOTIONS m = t->motion;
+
+    if (m == Motion_J || m == Motion_F)
         t->pos.y = t->pos.y + (t->step * dt);
-    else
+    else if (m == Motion_D || m == Motion_K)
         t->pos.y = t->pos.y - (t->step * dt);
 }
 
 void map_run(V2f map)
 {
     // ahh yes - https://reddit.com/r/ProgrammerHumor/comments/1jvwlp2
-#include "temp.h"
+#include "map.h"
 }
 //void map_run(V2f map)
 //{
@@ -392,12 +313,23 @@ void add_text(char *text, V2f pos, float lifetime)
     t.appear_time = 0;
     t.lifetime = lifetime;
     
-    push(server.text_arr, t);
+    arrpush(server.text_arr, t);
+}
+
+void combo_break()
+{
+    server.combo = 0;
+}
+
+void combo_update()
+{
+    server.combo++;
 }
 
 int main(void)
 {
-    const V2f map = v2f(1920, 1080);
+    //const V2f map = v2f(1920, 1080);
+    const V2f map = v2f(2560, 1440);
     const V2f map_middle = v2f_div(map, v2ff(2));
 
     InitWindow(map.x, map.y, "Sesbian Lex!");
@@ -409,10 +341,6 @@ int main(void)
 
     //test
     map_run(map);
-    //start_trail(Motion_F, map, 1, 4);
-    //start_trail(Motion_D, map, 2, 4);
-    //start_trail(Motion_J, map, 3, 4);
-    //start_trail(Motion_K, map, 4, 4);
 
     bool pause = false;
     float factor = 1;
@@ -434,49 +362,33 @@ int main(void)
         if (pause == false)
             server.time += dt;
 
-        printf("%f\n", server.time);
-
         BeginDrawing();
 
-        for (int i = 0; i<MOTION_COUNT; i++)
+        int a = arrlen(server.trails);
+        printf("%.2f: arr_size(%d)\n", server.time, a);
+
+        for (size_t j = 0; j<arrlenu(server.trails); j++)
         {
-            float dir = 1;
+            struct Trail *t = &server.trails[j];
 
-            switch (i)
-            {
-                case Motion_F: dir = 1;  break;
-                case Motion_D: dir = -1; break;
-                case Motion_J: dir = 1;  break;
-                case Motion_K: dir = -1; break;
+            if (t->alive == false) {
+                arrdel(server.trails, j);
+                continue;
             }
+            if (t->spawntime > server.time) continue;
 
-            for (size_t j = 0; j<server.trails[i].count; j++)
-            {
-                struct Trail *t = &server.trails[i].items[j];
+            if (pause == false)
+                trail_step(t, dt);
 
-                if (t->alive == false) continue;
-                if (t->spawntime > server.time) continue;
+            check_borders(t, map_middle);
 
-                if (pause == false)
-                    trail_step(t, dt, dir);
-                check_borders(i, t, map_middle, dir);
-
-                if (t->alive == true)
-                {
-                    DrawCircle(t->pos.x, t->pos.y, server.tr, t->c);
-                    DrawCircle(t->pos.x, t->pos.y, 2, DARKPURPLE);
-                }
-            }
-            // TODO: deleting while iteration through array here
-            //for (int j = 0; j<server.trails[i].count; j++)
-            //{
-            //    if (server.trails[i].items[j].alive == false)
-            //        delete(server.trails[i], server.trails[i].items[j]);
-            //}
+            DrawCircle(t->pos.x, t->pos.y, server.tr, t->c);
+            DrawCircle(t->pos.x, t->pos.y, 10, DARKPURPLE);
         }
 
         drawlines(map, map_middle);
         drawtext(map, dt);
+
         ClearBackground(BLACK);
         EndDrawing();
     }
